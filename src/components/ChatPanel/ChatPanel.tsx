@@ -8,19 +8,48 @@ export default function ChatPanel() {
     { text: "Hi! I'm your AI assistant. How can I help you today?", isUser: false }
   ]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSend = () => {
-    if (input.trim()) {
-      setMessages([...messages, { text: input, isUser: true }]);
+  const handleSend = async () => {
+    if (input.trim() && !isLoading) {
+      const userMessage = { text: input, isUser: true };
+      const newMessages = [...messages, userMessage];
+      setMessages(newMessages);
       setInput('');
-      
-      // Simulate AI response (you'll replace this with actual AI integration later)
-      setTimeout(() => {
+      setIsLoading(true);
+
+      try {
+        const response = await fetch('/api/llm', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: newMessages.map(msg => ({
+              role: msg.isUser ? 'user' : 'assistant',
+              content: msg.text,
+            })),
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch response');
+        }
+
+        const data = await response.json();
         setMessages(prev => [...prev, { 
-          text: "I'm here to help! This is a placeholder response.", 
+          text: data.text, 
           isUser: false 
         }]);
-      }, 1000);
+      } catch (error) {
+        console.error('Error calling Groq:', error);
+        setMessages(prev => [...prev, { 
+          text: "I'm sorry, I'm having trouble connecting right now.", 
+          isUser: false 
+        }]);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -28,6 +57,7 @@ export default function ChatPanel() {
     <div className={styles.chatPanel}>
       <div className={styles.header}>
         <h1>Welcome to My Portfolio</h1>
+        <p className={styles.subtitle}>Ask me anything about my work and experience</p>
       </div>
       
       <div className={styles.messagesContainer}>
@@ -39,6 +69,13 @@ export default function ChatPanel() {
             {message.text}
           </div>
         ))}
+        {isLoading && (
+          <div className={`${styles.message} ${styles.aiMessage} ${styles.loadingMessage}`}>
+            <span className={styles.loadingDot}></span>
+            <span className={styles.loadingDot}></span>
+            <span className={styles.loadingDot}></span>
+          </div>
+        )}
       </div>
 
       <div className={styles.inputContainer}>
@@ -46,14 +83,20 @@ export default function ChatPanel() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
           placeholder="Type your message..."
           className={styles.input}
+          disabled={isLoading}
         />
-        <button onClick={handleSend} className={styles.sendButton}>
-          Send
+        <button onClick={handleSend} className={styles.sendButton} disabled={isLoading}>
+          {isLoading ? (
+            <span className={styles.sendingText}>Sending</span>
+          ) : (
+            <span>Send</span>
+          )}
         </button>
       </div>
+
 
       <div className={styles.buttonsContainer}>
         <button className={styles.actionButton}>About Me</button>

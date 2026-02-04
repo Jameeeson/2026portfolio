@@ -94,7 +94,7 @@ export default function Avatar3D() {
         
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
           <planeGeometry args={[20, 20]} />
-          <meshStandardMaterial color="#473e3eff" />
+          <meshStandardMaterial color="#3a3a3a" />
         </mesh>
         
         <AvatarModel 
