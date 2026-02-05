@@ -2,13 +2,20 @@
 
 import { useState } from 'react';
 import styles from './ChatPanel.module.css';
+import { useLipSync } from '../Avatar3D/lipsync';
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<Array<{ text: string; isUser: boolean }>>([
+  const [messages, setMessages] = useState<Array<{ text: string; rawText?: string; isUser: boolean }>>([
     { text: "Hi! I'm your AI assistant. How can I help you today?", isUser: false }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const { playAudio } = useLipSync();
+
+  const cleanText = (text: string) => {
+    return text.replace(/\[.*?\]/g, '').trim().replace(/\s+/g, ' ');
+  };
 
   const handleSend = async () => {
     if (input.trim() && !isLoading) {
@@ -37,10 +44,42 @@ export default function ChatPanel() {
         }
 
         const data = await response.json();
-        setMessages(prev => [...prev, { 
-          text: data.text, 
-          isUser: false 
-        }]);
+        const rawText = data.text;
+        const displayText = cleanText(rawText);
+        
+        // Auto-play default: fetch TTS then show message
+        try {
+            const ttsResponse = await fetch('/api/tts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: rawText }),
+            });
+    
+            if (!ttsResponse.ok) throw new Error('TTS failed');
+    
+            const blob = await ttsResponse.blob();
+            const url = URL.createObjectURL(blob);
+
+
+            // Show message only when audio is ready
+            setMessages(prev => [...prev, { 
+            text: displayText, 
+            rawText: rawText,
+            isUser: false 
+          }]);
+        
+        await playAudio(url);
+
+        } catch (ttsError) {
+             console.error("TTS error:", ttsError);
+             // Fallback: show message even if TTS fails
+             setMessages(prev => [...prev, { 
+              text: displayText, 
+              rawText: rawText,
+              isUser: false 
+            }]);
+        }
+
       } catch (error) {
         console.error('Error calling Groq:', error);
         setMessages(prev => [...prev, { 
@@ -56,8 +95,10 @@ export default function ChatPanel() {
   return (
     <div className={styles.chatPanel}>
       <div className={styles.header}>
-        <h1>Welcome to My Portfolio</h1>
-        <p className={styles.subtitle}>Ask me anything about my work and experience</p>
+        <div className={styles.headerContent}>
+          <h1>Welcome to My Portfolio</h1>
+          <p className={styles.subtitle}>Ask me anything about my work and experience</p>
+        </div>
       </div>
       
       <div className={styles.messagesContainer}>

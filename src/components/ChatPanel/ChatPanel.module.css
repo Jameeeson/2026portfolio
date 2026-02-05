@@ -104,7 +104,7 @@
 
 .aiMessage {
   background: rgba(255, 255, 255, 0.04);
-  color: var(--foreground);
+  color: white;
   align-self: flex-start;
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
@@ -122,8 +122,8 @@
   padding: 1rem 1.5rem;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--foreground);
+  background: rgba(151, 151, 151, 0.04);
+  color: white;
   font-size: 0.95rem;
   outline: none;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -187,7 +187,7 @@
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
-  color: var(--foreground);
+  color: white;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -310,4 +310,62 @@
   .sendButton {
     width: 100%;
   }
+}
+
+.ttsButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  margin-left: 0.5rem;
+  font-size: 1.2rem;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+  vertical-align: middle;
+  padding: 4px;
+  border-radius: 50%;
+}
+
+.ttsButton:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.1);
+}
+
+.ttsButton:active {
+  transform: scale(0.95);
+}
+
+.header {
+  display: flex !important;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.headerContent {
+  flex: 1;
+}
+
+.autoPlayButton {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0.5rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  margin-left: 1rem;
+}
+
+.autoPlayButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.autoPlayButton.active {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
