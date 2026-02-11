@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { SYSTEM_PROMPT } from '../prompttemplate/route';
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API,
+  apiKey: process.env.grok_api,
 });
 
 export async function POST(req: Request) {

@@ -3,7 +3,7 @@ import { Groq } from 'groq-sdk';
 import { NextResponse } from 'next/server';
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API,
+  apiKey: process.env.grok_api,
 });
 
 export async function POST(req: Request) {

@@ -1,20 +1,25 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGLTF, useFBX, Center } from '@react-three/drei';
-import { MathUtils, AnimationAction, LoopRepeat } from 'three';
+import { useGLTF, useFBX, Center, useKeyboardControls } from '@react-three/drei';
 import { 
-  Group, 
+  MathUtils, 
+  AnimationAction, 
+  LoopRepeat, 
+  Vector3, 
+  Quaternion, 
   AnimationMixer, 
+  Group, 
+  Mesh, 
+  Object3D, 
   SkinnedMesh, 
   Skeleton, 
   Bone, 
   AnimationClip, 
-  KeyframeTrack, 
-  Object3D, 
-  Mesh, 
+  KeyframeTrack,
+  AnimationUtils // <--- IMPORT THIS
 } from 'three';
 import { SkeletonUtils } from 'three-stdlib';
 import { useLipSync } from './lipsync'; 
@@ -22,33 +27,54 @@ import { useLipSync } from './lipsync';
 type AvatarModelProps = {
   position?: [number, number, number];
   scale?: number;
+  controlsEnabled?: boolean;
+  onPositionUpdate?: (position: [number, number, number]) => void;
+  onRotationUpdate?: (rotation: number) => void;
 };
 
-export default function AvatarModel({ position = [0, 0, 0], scale = 1 }: AvatarModelProps) {
+export default function AvatarModel({ 
+  position = [0, 0, 0], 
+  scale = 1, 
+  controlsEnabled = false,
+  onPositionUpdate,
+  onRotationUpdate
+}: AvatarModelProps) {
   const groupRef = useRef<Group>(null);
   const mixerRef = useRef<AnimationMixer | null>(null);
   
   // 1. LOAD ASSETS
   const gltf = useGLTF('/models/self.glb');
-  const idleFbx = useFBX('/animations/window.fbx');   // Your Idle animation
-  const talkFbx = useFBX('/animations/Talking.fbx');  // NEW: Talking animation
+  const idleFbx = useFBX('/animations/window.fbx');
+  const talkFbx = useFBX('/animations/Talking.fbx');
+  const walkFbx = useFBX('/animations/walk.fbx');
+  const runFbx = useFBX('/animations/running.fbx');
 
-  // 2. GET CONTEXT
-  const { analyser, isPlaying } = useLipSync(); // We need isPlaying state
+  // 2. CONTEXT
+  const { analyser, isPlaying } = useLipSync();
+  const [, getKeys] = useKeyboardControls();
   const dataArray = useRef<Uint8Array>(new Uint8Array(0));
 
-  const clonedScene = SkeletonUtils.clone(gltf.scene);
+  const clonedScene = useMemo(() => SkeletonUtils.clone(gltf.scene), [gltf.scene]);
+  
   const headMeshRef = useRef<Mesh | null>(null);
   const teethMeshRef = useRef<Mesh | null>(null);
 
-  // Store actions to crossfade later
-  const actions = useRef<{ idle: AnimationAction | null; talk: AnimationAction | null }>({ 
-    idle: null, 
-    talk: null 
+  // Movement State
+  const rotationTarget = useRef(0);
+  const currentSpeed = useRef(0); 
+  
+  // Animation State
+  const actions = useRef<{ 
+    idle: AnimationAction | null; 
+    talk: AnimationAction | null; 
+    walk: AnimationAction | null;
+    run: AnimationAction | null;
+  }>({ 
+    idle: null, talk: null, walk: null, run: null
   });
+  const currentActionName = useRef<'idle' | 'talk' | 'walk' | 'run'>('idle');
 
   // --- HELPER: RETARGET ANIMATION ---
-  // This extracts the Mixamo retargeting logic so we can reuse it for both clips
   const retargetClip = (sourceClip: AnimationClip, skeleton: Skeleton) => {
     const bones = skeleton.bones as Bone[];
     const retargetedTracks: KeyframeTrack[] = [];
@@ -58,8 +84,9 @@ export default function AvatarModel({ position = [0, 0, 0], scale = 1 }: AvatarM
       const boneName = trackParts[0];
       const property = trackParts.slice(1).join('.');
 
-      if (property === 'position') {
-        if (boneName.toLowerCase().includes('hips') || boneName.toLowerCase().includes('root')) return;
+      // Remove Root Motion
+      if (property === 'position' && (boneName.toLowerCase().includes('hips') || boneName.toLowerCase().includes('root'))) {
+        return; 
       }
 
       const matchingBone = bones.find((bone: Bone) => {
@@ -92,93 +119,174 @@ export default function AvatarModel({ position = [0, 0, 0], scale = 1 }: AvatarM
     });
   }, [clonedScene]);
 
-  // --- SETUP ANIMATIONS (IDLE & TALK) ---
+  // --- SETUP ANIMATIONS (WITH TRIM LOGIC) ---
   useEffect(() => {
-    if (clonedScene && idleFbx.animations.length > 0 && talkFbx.animations.length > 0) {
-      mixerRef.current = new AnimationMixer(clonedScene);
-      
-      // Find Skeleton
-      let avatarSkeleton: Skeleton | null = null;
-      clonedScene.traverse((child: Object3D) => {
-        if (child instanceof SkinnedMesh) avatarSkeleton = child.skeleton as Skeleton;
-      });
+    if (!clonedScene || !idleFbx || !talkFbx || !walkFbx || !runFbx) return;
 
-      if (avatarSkeleton) {
-        // 1. Prepare Idle Action
-        const idleClip = retargetClip(idleFbx.animations[0], avatarSkeleton);
-        const idleAction = mixerRef.current.clipAction(idleClip);
-        idleAction.play(); // Start playing Idle immediately
-        actions.current.idle = idleAction;
+    if (mixerRef.current) mixerRef.current.stopAllAction();
+    mixerRef.current = new AnimationMixer(clonedScene);
+    
+    let avatarSkeleton: Skeleton | null = null;
+    clonedScene.traverse((child: Object3D) => {
+      if (child instanceof SkinnedMesh) avatarSkeleton = child.skeleton as Skeleton;
+    });
 
-        // 2. Prepare Talk Action
-        const talkClip = retargetClip(talkFbx.animations[0], avatarSkeleton);
-        const talkAction = mixerRef.current.clipAction(talkClip);
-        // Don't play yet, just store it
-        talkAction.loop = LoopRepeat;
-        actions.current.talk = talkAction;
-      }
+    if (avatarSkeleton) {
+      // 1. Idle
+      const idleClip = retargetClip(idleFbx.animations[0], avatarSkeleton);
+      const idleAction = mixerRef.current.clipAction(idleClip);
+      actions.current.idle = idleAction;
+
+      // 2. Talk
+      const talkClip = retargetClip(talkFbx.animations[0], avatarSkeleton);
+      const talkAction = mixerRef.current.clipAction(talkClip);
+      talkAction.loop = LoopRepeat;
+      actions.current.talk = talkAction;
+
+      // 3. Walk (TRIMMED)
+      const walkOriginal = walkFbx.animations[0];
+      const walkTrimmed = AnimationUtils.subclip(walkOriginal, 'walkTrimmed', 30, Math.floor(walkOriginal.duration * 30), 30);
+      const walkClip = retargetClip(walkTrimmed, avatarSkeleton);
+      const walkAction = mixerRef.current.clipAction(walkClip);
+      walkAction.loop = LoopRepeat;
+      actions.current.walk = walkAction;
+
+      // 4. Run
+      const runClip = retargetClip(runFbx.animations[0], avatarSkeleton);
+      const runAction = mixerRef.current.clipAction(runClip);
+      runAction.loop = LoopRepeat;
+      actions.current.run = runAction;
+
+      // START
+      idleAction.play();
+      currentActionName.current = 'idle';
     }
-    return () => { mixerRef.current?.stopAllAction(); };
-  }, [clonedScene, idleFbx, talkFbx]);
 
-  // --- HANDLE CROSSFADE WHEN AUDIO PLAYS/STOPS ---
-  useEffect(() => {
-    const { idle, talk } = actions.current;
-    if (!idle || !talk) return;
+    return () => {
+      mixerRef.current?.stopAllAction();
+      mixerRef.current = null;
+    };
+  }, [clonedScene, idleFbx, talkFbx, walkFbx, runFbx]);
 
-    const transitionDuration = 0.5; // Smooth fade over 0.5 seconds
+  // --- TRANSITION SYSTEM ---
+  const fadeToAction = (targetName: 'idle' | 'talk' | 'walk' | 'run') => {
+    const nextAction = actions.current[targetName];
+    const prevAction = actions.current[currentActionName.current];
 
-    if (isPlaying) {
-      // Switch to Talking
-      idle.fadeOut(transitionDuration);
-      talk.reset().fadeIn(transitionDuration).play();
-    } else {
-      // Switch back to Idle
-      talk.fadeOut(transitionDuration);
-      idle.reset().fadeIn(transitionDuration).play();
-    }
-  }, [isPlaying]); // Triggers whenever isPlaying changes
+    if (!nextAction || nextAction === prevAction) return;
 
-  // --- FRAME LOOP (LIP SYNC) ---
+    // Fast transition for movement to look responsive
+    const duration = (targetName === 'walk' || targetName === 'run') ? 0.15 : 0.3;
+
+    if (prevAction) prevAction.fadeOut(duration);
+
+    nextAction
+      .reset()
+      .setEffectiveTimeScale(1)
+      .setEffectiveWeight(1)
+      .fadeIn(duration)
+      .play();
+
+    currentActionName.current = targetName;
+  };
+
+  // --- FRAME LOOP ---
   useFrame((state, delta) => {
-    mixerRef.current?.update(delta);
+    if (mixerRef.current) mixerRef.current.update(delta);
 
-    // LIP SYNC LOGIC (With your high-frequency tweaks)
+    const keys = getKeys();
+    const isMoving = controlsEnabled && (keys.forward || keys.backward || keys.left || keys.right);
+    
+    // 1. ANIMATION SELECTION
+    let desiredAnim: 'idle' | 'talk' | 'walk' | 'run' = 'idle';
+    if (isMoving) {
+      desiredAnim = keys.run ? 'run' : 'walk';
+    } else if (isPlaying) {
+      desiredAnim = 'talk';
+    }
+
+    // 2. TRIGGER TRANSITION
+    if (desiredAnim !== currentActionName.current) {
+      fadeToAction(desiredAnim);
+    }
+
+    // 3. PHYSICS
+    if (groupRef.current) {
+        // Target speed logic
+        const targetSpeed = isMoving ? (keys.run ? 5.0 : 2.5) : 0;
+        
+        // Smooth acceleration (LERP)
+        currentSpeed.current = MathUtils.lerp(currentSpeed.current, targetSpeed, 0.1);
+
+        if (currentSpeed.current > 0.05) {
+            const direction = new Vector3();
+            if (keys.forward) direction.z -= 1;
+            if (keys.backward) direction.z += 1;
+            if (keys.left) direction.x -= 1;
+            if (keys.right) direction.x += 1;
+
+            if (direction.length() > 0) {
+                direction.normalize();
+                
+                // CAMERA-RELATIVE MOVEMENT
+                // Get the angle of the camera manually
+                const camera = state.camera;
+                const cameraRotation = Math.atan2(
+                  camera.position.x - groupRef.current.position.x,
+                  camera.position.z - groupRef.current.position.z
+                );
+                
+                // Calculate the final rotation target based on camera orientation
+                rotationTarget.current = Math.atan2(direction.x, direction.z) + cameraRotation + Math.PI;
+
+                const targetQuaternion = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), rotationTarget.current);
+                groupRef.current.quaternion.slerp(targetQuaternion, 0.2);
+
+                if (onRotationUpdate) {
+                    onRotationUpdate(rotationTarget.current);
+                }
+            }
+            
+            const forwardVec = new Vector3(0, 0, 1).applyQuaternion(groupRef.current.quaternion);
+            groupRef.current.position.add(forwardVec.multiplyScalar(currentSpeed.current * delta));
+            
+            // Notify parent about position update for camera tracking
+            if (onPositionUpdate) {
+                onPositionUpdate([groupRef.current.position.x, groupRef.current.position.y, groupRef.current.position.z]);
+            }
+        }
+        
+        // Sync Animation Speeds
+        if (actions.current.walk) {
+           actions.current.walk.timeScale = currentSpeed.current / 2.5;
+        }
+        if (actions.current.run) {
+           actions.current.run.timeScale = currentSpeed.current / 5.0;
+        }
+    }
+
+    // 4. LIP SYNC
     if (analyser && headMeshRef.current && headMeshRef.current.morphTargetInfluences) {
-      
-      if (dataArray.current.length !== analyser.frequencyBinCount) {
-        dataArray.current = new Uint8Array(analyser.frequencyBinCount);
-      }
-      analyser.getByteFrequencyData(dataArray.current as any);
-
-      let sum = 0;
-      const freqRange = 30; 
-      for (let i = 0; i < freqRange; i++) {
-        sum += dataArray.current[i];
-      }
-      const average = sum / freqRange;
-
-      // High sensitivity settings
-      const sensitivity = 2.0; 
-      let targetValue = (average / 255) * sensitivity;
-
-      if (targetValue < 0.15) targetValue = 0; // Noise gate
-      targetValue = Math.min(1, targetValue);
-
-      const currentInfluence = headMeshRef.current.morphTargetInfluences[0];
-      const smoothValue = MathUtils.lerp(currentInfluence, targetValue, 0.6); // Fast smoothing
-
-      headMeshRef.current.morphTargetInfluences[0] = smoothValue;
-      if (teethMeshRef.current && teethMeshRef.current.morphTargetInfluences) {
-        teethMeshRef.current.morphTargetInfluences[0] = smoothValue;
-      }
-    } else if (headMeshRef.current && headMeshRef.current.morphTargetInfluences) {
-      // Close mouth
-      const closedValue = MathUtils.lerp(headMeshRef.current.morphTargetInfluences[0], 0, 0.5);
-      headMeshRef.current.morphTargetInfluences[0] = closedValue;
-      if (teethMeshRef.current && teethMeshRef.current.morphTargetInfluences) {
-        teethMeshRef.current.morphTargetInfluences[0] = closedValue;
-      }
+        if (dataArray.current.length !== analyser.frequencyBinCount) {
+          dataArray.current = new Uint8Array(analyser.frequencyBinCount);
+        }
+        analyser.getByteFrequencyData(dataArray.current as any);
+        let sum = 0;
+        const freqRange = 30; 
+        for (let i = 0; i < freqRange; i++) sum += dataArray.current[i];
+        const average = sum / freqRange;
+        let targetValue = (average / 255) * 2.5; 
+        targetValue = Math.min(1, Math.max(0, targetValue - 0.1)); 
+        const currentInfluence = headMeshRef.current.morphTargetInfluences[0];
+        headMeshRef.current.morphTargetInfluences[0] = MathUtils.lerp(currentInfluence, targetValue, 0.5);
+        if (teethMeshRef.current && teethMeshRef.current.morphTargetInfluences) {
+          teethMeshRef.current.morphTargetInfluences[0] = headMeshRef.current.morphTargetInfluences[0];
+        }
+    } else if (!isPlaying && headMeshRef.current && headMeshRef.current.morphTargetInfluences) {
+        headMeshRef.current.morphTargetInfluences[0] = MathUtils.lerp(headMeshRef.current.morphTargetInfluences[0], 0, 0.2);
+        if (teethMeshRef.current && teethMeshRef.current.morphTargetInfluences) {
+          teethMeshRef.current.morphTargetInfluences[0] = headMeshRef.current.morphTargetInfluences[0];
+        }
     }
   });
 
@@ -193,4 +301,6 @@ export default function AvatarModel({ position = [0, 0, 0], scale = 1 }: AvatarM
 
 useGLTF.preload('/models/self.glb');
 useFBX.preload('/animations/window.fbx');
-useFBX.preload('/animations/Talking.fbx'); // Preload the new file
+useFBX.preload('/animations/Talking.fbx'); 
+useFBX.preload('/animations/walk.fbx');
+useFBX.preload('/animations/running.fbx');

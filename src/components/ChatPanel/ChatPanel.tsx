@@ -4,7 +4,12 @@ import { useState } from 'react';
 import styles from './ChatPanel.module.css';
 import { useLipSync } from '../Avatar3D/lipsync';
 
-export default function ChatPanel() {
+type ChatPanelProps = {
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
+};
+
+export default function ChatPanel({ isCollapsed, setIsCollapsed }: ChatPanelProps) {
   const [messages, setMessages] = useState<Array<{ text: string; rawText?: string; isUser: boolean }>>([
     { text: "Hi! I'm your AI assistant. How can I help you today?", isUser: false }
   ]);
@@ -93,55 +98,89 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className={styles.chatPanel}>
-      <div className={styles.header}>
-        <div className={styles.headerContent}>
-          <h1>Welcome to My Portfolio</h1>
-          <p className={styles.subtitle}>Ask me anything about my work and experience</p>
+    <div className={`${styles.chatPanel} ${isCollapsed ? styles.collapsed : ''}`}>
+      <button 
+        className={styles.hamburgerButton} 
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        onKeyDown={(e) => {
+          if (e.key === ' ' || e.key === 'Spacebar') {
+            e.preventDefault();
+          }
+        }}
+        aria-label="Toggle Menu"
+      >
+        <div className={`${styles.hamburgerIcon} ${isCollapsed ? '' : styles.active}`}>
+          <span></span>
+          <span></span>
+          <span></span>
         </div>
-      </div>
-      
-      <div className={styles.messagesContainer}>
-        {messages.map((message, index) => (
-          <div 
-            key={index} 
-            className={`${styles.message} ${message.isUser ? styles.userMessage : styles.aiMessage}`}
-          >
-            {message.text}
-          </div>
-        ))}
-        {isLoading && (
-          <div className={`${styles.message} ${styles.aiMessage} ${styles.loadingMessage}`}>
-            <span className={styles.loadingDot}></span>
-            <span className={styles.loadingDot}></span>
-            <span className={styles.loadingDot}></span>
-          </div>
-        )}
-      </div>
+      </button>
 
-      <div className={styles.inputContainer}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-          placeholder="Type your message..."
-          className={styles.input}
-          disabled={isLoading}
-        />
-        <button onClick={handleSend} className={styles.sendButton} disabled={isLoading}>
-          {isLoading ? (
-            <span className={styles.sendingText}>Sending</span>
-          ) : (
-            <span>Send</span>
+      <div className={styles.contentWrapper}>
+        <div className={styles.header}>
+          <div className={styles.headerContent}>
+            <h1>Welcome to My Portfolio</h1>
+            <p className={styles.subtitle}>Ask me anything about my work and experience</p>
+          </div>
+        </div>
+        
+        <div className={styles.messagesContainer}>
+          {messages.map((message, index) => (
+            <div 
+              key={index} 
+              className={`${styles.message} ${message.isUser ? styles.userMessage : styles.aiMessage}`}
+            >
+              {message.text}
+            </div>
+          ))}
+          {isLoading && (
+            <div className={`${styles.message} ${styles.aiMessage} ${styles.loadingMessage}`}>
+              <span className={styles.loadingDot}></span>
+              <span className={styles.loadingDot}></span>
+              <span className={styles.loadingDot}></span>
+            </div>
           )}
-        </button>
-      </div>
+        </div>
+
+        <div className={styles.inputContainer}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+            placeholder="Type your message..."
+            className={styles.input}
+            disabled={isLoading}
+          />
+          <button onClick={handleSend} className={styles.sendButton} disabled={isLoading}>
+            {isLoading ? (
+              <span className={styles.sendingText}>Sending</span>
+            ) : (
+              <span>Send</span>
+            )}
+          </button>
+        </div>
 
 
-      <div className={styles.buttonsContainer}>
-        <button className={styles.actionButton}>About Me</button>
-        <button className={styles.actionButton}>Projects</button>
+        <div className={styles.buttonsContainer}>
+          <button 
+            className={styles.actionButton}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+              }
+            }}
+          >About Me</button>
+          <button 
+            className={styles.actionButton} 
+            onClick={() => setIsCollapsed(true)}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+              }
+            }}
+          >Projects</button>
+        </div>
       </div>
     </div>
   );

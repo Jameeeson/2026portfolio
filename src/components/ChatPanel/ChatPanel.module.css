@@ -7,6 +7,90 @@
   backdrop-filter: blur(20px);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   position: relative;
+  width: 50vw;
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1), padding 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.collapsed {
+  width: 70px;
+  padding: 2rem 0;
+}
+
+.contentWrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.collapsed .contentWrapper {
+  opacity: 0;
+  transform: translateX(-20px);
+  pointer-events: none;
+}
+
+.hamburgerButton {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  z-index: 100;
+  padding: 0.75rem;
+  color: white;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hamburgerButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.collapsed .hamburgerButton {
+  right: 50%;
+  transform: translateX(50%);
+  background: transparent;
+  border-color: transparent;
+}
+
+.hamburgerIcon {
+  width: 20px;
+  height: 14px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hamburgerIcon span {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background-color: #fff;
+  border-radius: 2px;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hamburgerIcon.active span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.hamburgerIcon.active span:nth-child(2) {
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+.hamburgerIcon.active span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
 }
 
 .chatPanel::before {
