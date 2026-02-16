@@ -23,6 +23,7 @@ import {
 } from 'three';
 import { SkeletonUtils } from 'three-stdlib';
 import { useLipSync } from './lipsync'; 
+import { RigidBody, RapierRigidBody, CapsuleCollider } from '@react-three/rapier';
 
 type AvatarModelProps = {
   position?: [number, number, number];
@@ -30,6 +31,7 @@ type AvatarModelProps = {
   controlsEnabled?: boolean;
   onPositionUpdate?: (position: [number, number, number]) => void;
   onRotationUpdate?: (rotation: number) => void;
+  joystickInput?: { x: number; y: number }; // Mobile joystick input
 };
 
 export default function AvatarModel({ 
@@ -37,14 +39,16 @@ export default function AvatarModel({
   scale = 1, 
   controlsEnabled = false,
   onPositionUpdate,
-  onRotationUpdate
+  onRotationUpdate,
+  joystickInput = { x: 0, y: 0 }
 }: AvatarModelProps) {
   const groupRef = useRef<Group>(null);
+  const rbRef = useRef<RapierRigidBody>(null);
   const mixerRef = useRef<AnimationMixer | null>(null);
   
   // 1. LOAD ASSETS
   const gltf = useGLTF('/models/self.glb');
-  const idleFbx = useFBX('/animations/window.fbx');
+  const idleFbx = useFBX('/animations/breath.fbx');
   const talkFbx = useFBX('/animations/Talking.fbx');
   const walkFbx = useFBX('/animations/walk.fbx');
   const runFbx = useFBX('/animations/running.fbx');
@@ -195,7 +199,10 @@ export default function AvatarModel({
     if (mixerRef.current) mixerRef.current.update(delta);
 
     const keys = getKeys();
-    const isMoving = controlsEnabled && (keys.forward || keys.backward || keys.left || keys.right);
+    
+    // Check for joystick input (mobile) or keyboard input (desktop)
+    const hasJoystickInput = Math.abs(joystickInput.x) > 0.1 || Math.abs(joystickInput.y) > 0.1;
+    const isMoving = controlsEnabled && (keys.forward || keys.backward || keys.left || keys.right || hasJoystickInput);
     
     // 1. ANIMATION SELECTION
     let desiredAnim: 'idle' | 'talk' | 'walk' | 'run' = 'idle';
@@ -211,29 +218,40 @@ export default function AvatarModel({
     }
 
     // 3. PHYSICS
-    if (groupRef.current) {
+    if (groupRef.current && rbRef.current) {
         // Target speed logic
         const targetSpeed = isMoving ? (keys.run ? 5.0 : 2.5) : 0;
         
         // Smooth acceleration (LERP)
         currentSpeed.current = MathUtils.lerp(currentSpeed.current, targetSpeed, 0.1);
 
+        const currentLinvel = rbRef.current.linvel();
+        const newLinvel = { x: 0, y: currentLinvel.y, z: 0 };
+
         if (currentSpeed.current > 0.05) {
             const direction = new Vector3();
-            if (keys.forward) direction.z -= 1;
-            if (keys.backward) direction.z += 1;
-            if (keys.left) direction.x -= 1;
-            if (keys.right) direction.x += 1;
+            
+            // Mobile joystick input
+            if (hasJoystickInput) {
+                direction.x = joystickInput.x;
+                direction.z = joystickInput.y;
+            } else {
+                // Desktop keyboard input
+                if (keys.forward) direction.z -= 1;
+                if (keys.backward) direction.z += 1;
+                if (keys.left) direction.x -= 1;
+                if (keys.right) direction.x += 1;
+            }
 
             if (direction.length() > 0) {
                 direction.normalize();
                 
                 // CAMERA-RELATIVE MOVEMENT
-                // Get the angle of the camera manually
                 const camera = state.camera;
+                const rbTranslation = rbRef.current.translation();
                 const cameraRotation = Math.atan2(
-                  camera.position.x - groupRef.current.position.x,
-                  camera.position.z - groupRef.current.position.z
+                  camera.position.x - rbTranslation.x,
+                  camera.position.z - rbTranslation.z
                 );
                 
                 // Calculate the final rotation target based on camera orientation
@@ -248,12 +266,16 @@ export default function AvatarModel({
             }
             
             const forwardVec = new Vector3(0, 0, 1).applyQuaternion(groupRef.current.quaternion);
-            groupRef.current.position.add(forwardVec.multiplyScalar(currentSpeed.current * delta));
-            
-            // Notify parent about position update for camera tracking
-            if (onPositionUpdate) {
-                onPositionUpdate([groupRef.current.position.x, groupRef.current.position.y, groupRef.current.position.z]);
-            }
+            newLinvel.x = forwardVec.x * currentSpeed.current;
+            newLinvel.z = forwardVec.z * currentSpeed.current;
+        }
+
+        rbRef.current.setLinvel(newLinvel, true);
+
+        // Notify parent about position update for camera tracking
+        const rbPos = rbRef.current.translation();
+        if (onPositionUpdate) {
+            onPositionUpdate([rbPos.x, rbPos.y, rbPos.z]);
         }
         
         // Sync Animation Speeds
@@ -291,11 +313,21 @@ export default function AvatarModel({
   });
 
   return (
-    <group ref={groupRef} position={position}>
-      <Center bottom>
-        <primitive object={clonedScene} scale={scale} />
-      </Center>
-    </group>
+    <RigidBody 
+      ref={rbRef} 
+      enabledRotations={[false, false, false]} 
+      position={position}
+      type="dynamic"
+      colliders={false}
+      ccd={true}
+    >
+      <CapsuleCollider args={[0.7, 0.4]} position={[0, -0.7, 0]} />
+      <group ref={groupRef}>
+        <Center bottom>
+          <primitive object={clonedScene} scale={scale} />
+        </Center>
+      </group>
+    </RigidBody>
   );
 }
 
